@@ -8,6 +8,7 @@ start:
       selector:
         select:
           options:
+            - swirl
             - fireplace
             - ocean
             - aurora

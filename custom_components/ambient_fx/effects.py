@@ -335,7 +335,50 @@ class RefreshingRain(Effect):
         return color
 
 
+def _hsv_to_rgb(h: float, s: float, v: float) -> tuple[float, float, float]:
+    """h 0..1, s 0..1, v 0..1 -> linear RGB 0..1."""
+    h = (h % 1.0) * 6.0
+    i = int(h)
+    f = h - i
+    p, q, t = v * (1 - s), v * (1 - s * f), v * (1 - s * (1 - f))
+    return [(v, t, p), (q, v, p), (p, v, t),
+            (p, q, v), (t, p, v), (v, p, q)][i % 6]
+
+
+class Swirl(Effect):
+    """A comet-like arc of color orbiting the room, trailing a fading
+    tail, slowly cycling through the color wheel as it circles."""
+
+    ORBIT_PERIOD = 8.0   # seconds per revolution
+    HUE_PERIOD = 45.0    # seconds per full color-wheel cycle
+
+    def render(self, t, ch):
+        # Angle of this light around the room center, and the swirl head.
+        light_angle = math.atan2(ch.y, ch.x)
+        head_angle = (t / self.ORBIT_PERIOD) * 2.0 * math.pi
+        # Signed angular offset behind the head (0..2π), wrapped.
+        behind = (head_angle - light_angle) % (2.0 * math.pi)
+
+        hue = t / self.HUE_PERIOD
+        # Head: tight bright core. Tail: exponential fade over ~a third
+        # of the circle, hue shifted slightly back for a rainbowed wake.
+        core = math.exp(-(behind * behind) * 6.0)
+        tail = math.exp(-behind * 2.2) * 0.6
+        glow = min(1.0, core + tail)
+
+        # Slow-breathing dim base so the room never goes black.
+        base = 0.06 + 0.04 * _fbm(t * 0.3, ch.channel_id * 0.9)
+        r, g, b = _hsv_to_rgb(hue - behind * 0.04, 0.85, 1.0)
+        bg = _hsv_to_rgb(hue + 0.5, 0.6, 1.0)  # complementary faint base
+        return (
+            bg[0] * base + r * glow,
+            bg[1] * base + g * glow,
+            bg[2] * base + b * glow,
+        )
+
+
 STREAM_EFFECTS: dict[str, type[Effect]] = {
+    "swirl": Swirl,
     "fireplace": Fireplace,
     "ocean": Ocean,
     "aurora": Aurora,
