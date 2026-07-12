@@ -1,0 +1,58 @@
+start:
+  name: Start effect
+  description: Start an animated dynamic scene on a Hue room or zone.
+  fields:
+    effect:
+      name: Effect
+      required: true
+      selector:
+        select:
+          options:
+            - fireplace
+            - ocean
+            - aurora
+            - sunset
+            - forest
+            - candlelight
+            - thunderstorm
+            - lava
+            - party
+            - zen
+    group:
+      name: Room or zone
+      description: Name of the Hue room or zone (as in the Hue app).
+      required: true
+      example: Living Room
+      selector:
+        text:
+    speed:
+      name: Speed
+      description: Animation speed override (0–1). Defaults per effect.
+      selector:
+        number:
+          min: 0
+          max: 1
+          step: 0.05
+    brightness:
+      name: Brightness
+      description: Overall brightness (1–100). Defaults per effect.
+      selector:
+        number:
+          min: 1
+          max: 100
+
+stop:
+  name: Stop effect
+  description: Stop the animation on a Hue room or zone.
+  fields:
+    group:
+      name: Room or zone
+      required: true
+      example: Living Room
+      selector:
+        text:
+    turn_off:
+      name: Turn off
+      description: Turn the lights off instead of freezing to warm white.
+      selector:
+        boolean:

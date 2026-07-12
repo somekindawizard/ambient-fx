@@ -1,0 +1,14 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Ambient FX",
+        "description": "Ambient FX will reuse the credentials of your existing Hue bridge ({bridge}). Effects animate on the bridge itself via dynamic scenes."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Already configured.",
+      "no_hue_bridge": "No configured Philips Hue bridge found. Set up the core Hue integration first."
+    }
+  }
+}
