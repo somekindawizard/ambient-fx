@@ -141,7 +141,7 @@ class StreamEngine:
 
     # MARK: Blocking stream thread (runs in executor)
 
-    COMPANION_INTERVAL = 1.5  # seconds between HA light updates (BLE pace)
+    COMPANION_INTERVAL = 1.0  # seconds between HA light updates (measured: ~0.85s per BLE write on Eve Flare gen-1)
 
     def _push_companion(self, entity_id: str, r: float, g: float,
                         b: float) -> None:
