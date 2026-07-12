@@ -353,7 +353,7 @@ class Swirl(Effect):
     """A comet-like arc of color orbiting the room, trailing a fading
     tail, slowly cycling through the color wheel as it circles."""
 
-    ORBIT_PERIOD = 8.0   # seconds per revolution
+    ORBIT_PERIOD = 12.0  # seconds per revolution
     HUE_PERIOD = 45.0    # seconds per full color-wheel cycle
 
     # Sampled at ~1s over BLE, an orbit reads as random pulses — skip.
@@ -363,30 +363,29 @@ class Swirl(Effect):
         # Angle of this light around the room center, and the swirl head.
         light_angle = math.atan2(ch.y, ch.x)
         head_angle = (t / self.ORBIT_PERIOD) * 2.0 * math.pi
-        # Signed angular offset behind the head (0..2π), wrapped.
         behind = (head_angle - light_angle) % (2.0 * math.pi)
+        ahead = (light_angle - head_angle) % (2.0 * math.pi)
 
         hue = t / self.HUE_PERIOD
-        # Head: broad bright core — wider than the angular gap between
-        # adjacent channels (~0.5 rad) so the head cross-fades smoothly
-        # from light to light instead of stepping. Tail: exponential
-        # fade over ~half the circle with a rainbowed wake.
-        core = math.exp(-(behind * behind) * 1.8)
-        # Lead-in ahead of the head so lights ramp up before it arrives.
-        ahead = (light_angle - head_angle) % (2.0 * math.pi)
-        core += math.exp(-(ahead * ahead) * 3.5) * 0.8
-        tail = math.exp(-behind * 1.5) * 0.55
-        glow = min(1.0, core + tail)
+        # Long symmetric approach and departure: each light spends ~2s
+        # fading up ahead of the head and ~3s fading down behind it.
+        rise = math.exp(-(ahead * ahead) * 1.1)
+        fall = math.exp(-(behind * behind) * 0.7)
+        tail = math.exp(-behind * 0.9) * 0.4
+        glow = min(1.0, max(rise, fall) + tail)
 
-        # Slow-breathing dim base so the room never goes black.
-        base = 0.06 + 0.04 * _fbm(t * 0.3, ch.channel_id * 0.9)
+        # The engine applies a 2.2 gamma for color depth; that turns a
+        # linear fade into dark-dark-dark-POP. Pre-compensate so the
+        # fade is perceptually linear — this is what makes lights feel
+        # like they swell and recede rather than switch.
+        glow = glow ** 0.45
+
+        # Base glow high enough that lamps never cross their visible
+        # on/off threshold.
+        base = 0.14 + 0.04 * _fbm(t * 0.3, ch.channel_id * 0.9)
+        level = base + (1.0 - base) * glow
         r, g, b = _hsv_to_rgb(hue - behind * 0.04, 0.85, 1.0)
-        bg = _hsv_to_rgb(hue + 0.5, 0.6, 1.0)  # complementary faint base
-        return (
-            bg[0] * base + r * glow,
-            bg[1] * base + g * glow,
-            bg[2] * base + b * glow,
-        )
+        return (r * level, g * level, b * level)
 
 
 STREAM_EFFECTS: dict[str, type[Effect]] = {
