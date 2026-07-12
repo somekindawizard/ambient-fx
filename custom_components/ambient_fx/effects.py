@@ -359,6 +359,30 @@ class Swirl(Effect):
     # Sampled at ~1s over BLE, an orbit reads as random pulses — skip.
     companion_friendly = False
 
+    HUE_SLEW = 0.06  # max hue drift per second (fraction of the wheel)
+
+    def __init__(self):
+        super().__init__()
+        self._shown_hue: dict[int, float] = {}
+        self._last_t: dict[int, float] = {}
+
+    def _eased_hue(self, ch_id: int, t: float, target: float) -> float:
+        """Slew-limit each light's displayed hue so a new color can only
+        dissolve in, never snap over what the light is showing."""
+        prev = self._shown_hue.get(ch_id)
+        if prev is None:
+            self._shown_hue[ch_id] = target % 1.0
+            self._last_t[ch_id] = t
+            return target
+        dt = max(0.0, min(0.5, t - self._last_t[ch_id]))
+        self._last_t[ch_id] = t
+        # Shortest signed distance around the hue wheel.
+        d = (target - prev + 0.5) % 1.0 - 0.5
+        step = max(-self.HUE_SLEW * dt, min(self.HUE_SLEW * dt, d))
+        shown = (prev + step) % 1.0
+        self._shown_hue[ch_id] = shown
+        return shown
+
     def render(self, t, ch):
         # Angle of this light around the room center, and the swirl head.
         light_angle = math.atan2(ch.y, ch.x)
@@ -385,12 +409,12 @@ class Swirl(Effect):
         base = 0.14 + 0.04 * _fbm(t * 0.3, ch.channel_id * 0.9)
         level = base + (1.0 - base) * glow
 
-        # Rainbow wake: the hue offset must be continuous around the
-        # whole circle — sin(behind/2) is zero at both ends of the wrap,
-        # so a light's color dissolves through the cycle instead of
-        # snapping when the head passes it.
-        wake = math.sin(behind * 0.5) * 0.10
-        r, g, b = _hsv_to_rgb(hue - wake, 0.85, 1.0)
+        # Rainbow wake (continuous around the wrap), then slew-limit the
+        # displayed hue so the head's color dissolves over the tail's
+        # instead of overwriting it as it sweeps past.
+        wake = math.sin(behind * 0.5) * 0.08
+        shown = self._eased_hue(ch.channel_id, t, hue - wake)
+        r, g, b = _hsv_to_rgb(shown, 0.85, 1.0)
         return (r * level, g * level, b * level)
 
 
