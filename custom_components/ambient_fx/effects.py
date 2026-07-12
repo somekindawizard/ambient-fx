@@ -418,8 +418,40 @@ class Swirl(Effect):
         return (r * level, g * level, b * level)
 
 
+class Breathing(Effect):
+    """Coherent-breathing guide: the whole room inhales and exhales at
+    ~5.5 breaths/min (5.5s in, 5.5s out — the HRV-resonance cadence used
+    in calming breathwork), colored like Apple's Breathe flower: deep
+    blue-teal at rest opening into pale mint at full breath. The breath
+    rises through the room: floor lights lead the inhale, ceiling peaks
+    last, and it settles back down on the exhale."""
+
+    CYCLE = 11.0  # seconds per full breath
+
+    # Apple Breathe flower palette (HSV): deep teal-blue -> pale mint.
+    REST_H, REST_S = 0.53, 0.80
+    FULL_H, FULL_S = 0.42, 0.45
+
+    def render(self, t, ch):
+        # Vertical phase lead: the inhale sweeps floor -> ceiling over
+        # ~0.6s; reversed feel on the exhale comes free from the cosine.
+        phase = (t - (ch.z + 1.0) * 0.3) / self.CYCLE
+        # Raised cosine: perfectly smooth at both turnarounds.
+        breath = 0.5 - 0.5 * math.cos(phase * 2.0 * math.pi)
+
+        # Perceptual compensation (engine applies 2.2 gamma) so the
+        # swell reads linear — same trick as the swirl.
+        level = 0.12 + 0.88 * (breath ** 0.45)
+
+        h = self.REST_H + (self.FULL_H - self.REST_H) * breath
+        s = self.REST_S + (self.FULL_S - self.REST_S) * breath
+        r, g, b = _hsv_to_rgb(h, s, 1.0)
+        return (r * level, g * level, b * level)
+
+
 STREAM_EFFECTS: dict[str, type[Effect]] = {
     "swirl": Swirl,
+    "breathing": Breathing,
     "fireplace": Fireplace,
     "ocean": Ocean,
     "aurora": Aurora,

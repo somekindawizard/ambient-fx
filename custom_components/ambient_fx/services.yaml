@@ -70,6 +70,7 @@ start_stream:
             - volcano_flow
             - refreshing_rain
             - swirl
+            - breathing
     area:
       name: Entertainment area
       description: Name of the entertainment area. Defaults to the first one.
