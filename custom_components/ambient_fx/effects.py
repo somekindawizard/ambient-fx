@@ -449,9 +449,59 @@ class Breathing(Effect):
         return (r * level, g * level, b * level)
 
 
+class Candle(Effect):
+    """Realistic candle flames: each light is its own flame with fast
+    shimmer over slow sway, color that reddens as it dips and yellows
+    as it flares, and occasional drafts that sweep across the room
+    making the flames gutter in sequence."""
+
+    # Ball excluded per request; also 1s sampling can't carry flicker.
+    companion_friendly = False
+
+    def __init__(self):
+        super().__init__()
+        self.next_draft = 9.0
+        self.draft_t = -100.0
+        self.draft_dir = 1
+
+    def tick(self, t):
+        if t >= self.next_draft:
+            self.draft_t = t
+            self.draft_dir = self.rng.choice([-1, 1])
+            self.next_draft = t + self.rng.uniform(9.0, 28.0)
+
+    def render(self, t, ch):
+        seed = ch.channel_id * 3.7
+        # Flame body: slow sway + fast shimmer + tiny sparkle.
+        sway = _fbm(t * 0.6, seed)
+        shimmer = _fbm(t * 5.0, seed + 41.0)
+        sparkle = _vnoise(t * 11.0, seed + 87.0)
+        level = 0.50 + sway * 0.22 + (shimmer - 0.5) * 0.28 + (sparkle - 0.5) * 0.10
+
+        # Draft: a gust crosses the room over ~1.2s; each flame gutters
+        # (deep fast dip) as it arrives, then recovers.
+        dt = t - self.draft_t
+        if 0 <= dt < 3.0:
+            arrival = (ch.x * self.draft_dir + 1.0) * 0.6
+            local = dt - arrival
+            if 0 <= local < 1.6:
+                gutter = math.exp(-local * 2.0)
+                wobble = 0.5 + 0.5 * math.sin(local * 30.0 + seed)
+                level *= 1.0 - gutter * (0.35 + 0.25 * wobble)
+
+        level = max(0.08, min(1.0, level)) ** 0.55  # perceptual fade
+
+        # Real flame color: dim = deep orange-red, bright = warm amber.
+        hue = 0.035 + level * 0.038
+        sat = 0.96 - level * 0.14
+        r, g, b = _hsv_to_rgb(hue, sat, 1.0)
+        return (r * level, g * level, b * level)
+
+
 STREAM_EFFECTS: dict[str, type[Effect]] = {
     "swirl": Swirl,
     "breathing": Breathing,
+    "candle": Candle,
     "fireplace": Fireplace,
     "ocean": Ocean,
     "aurora": Aurora,

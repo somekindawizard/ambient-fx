@@ -71,6 +71,7 @@ start_stream:
             - refreshing_rain
             - swirl
             - breathing
+            - candle
     area:
       name: Entertainment area
       description: Name of the entertainment area. Defaults to the first one.
