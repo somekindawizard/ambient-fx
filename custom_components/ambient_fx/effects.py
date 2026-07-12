@@ -38,6 +38,28 @@ def _noise(t: float, seed: float) -> float:
     ) * 0.5 + 0.5
 
 
+def _hash01(n: float) -> float:
+    """Deterministic pseudo-random 0..1 from a float."""
+    x = math.sin(n * 127.1 + 311.7) * 43758.5453
+    return x - math.floor(x)
+
+
+def _vnoise(t: float, seed: float) -> float:
+    """1D value noise in 0..1: random lattice values with smoothstep
+    interpolation. Non-repeating (unlike sine sums) — richer motion."""
+    i = math.floor(t)
+    f = t - i
+    f = f * f * (3.0 - 2.0 * f)  # smoothstep
+    a = _hash01(i + seed * 57.0)
+    b = _hash01(i + 1.0 + seed * 57.0)
+    return a + (b - a) * f
+
+
+def _fbm(t: float, seed: float) -> float:
+    """Two-octave fractal value noise, 0..1."""
+    return _vnoise(t, seed) * 0.65 + _vnoise(t * 2.7, seed + 13.0) * 0.35
+
+
 def _mix(a: tuple, b: tuple, f: float) -> tuple:
     f = max(0.0, min(1.0, f))
     return tuple(a[i] + (b[i] - a[i]) * f for i in range(3))
@@ -186,6 +208,104 @@ class Lava(Effect):
         return _mix(color, self.ORANGE, blob1 * blob2 * heat)
 
 
+class VolcanoFlow(Effect):
+    """Molten flows radiating from a vent behind the TV, with periodic
+    eruptions that surge outward through the room (eased, layered)."""
+
+    BLACK = (0.03, 0.0, 0.01)
+    CRUST = (0.30, 0.02, 0.0)
+    LAVA = (0.85, 0.10, 0.0)
+    SURGE = (1.0, 0.45, 0.05)
+    VENT = (0.0, 1.0, -1.0)  # x, y, z: floor level, center of TV wall
+
+    def __init__(self):
+        super().__init__()
+        self.next_eruption = 12.0
+        self.eruption_t = -100.0
+
+    def tick(self, t):
+        if t >= self.next_eruption:
+            self.eruption_t = t
+            self.next_eruption = t + self.rng.uniform(25.0, 60.0)
+
+    def _dist(self, ch: Channel) -> float:
+        dx, dy, dz = ch.x - self.VENT[0], ch.y - self.VENT[1], ch.z - self.VENT[2]
+        return math.sqrt(dx * dx + dy * dy + dz * dz)
+
+    def render(self, t, ch):
+        d = self._dist(ch)
+        # Base layer: slow molten flow — long-period fbm noise, hotter
+        # near the vent, with a minutes-scale swell so it evolves.
+        flow = _fbm(t * 0.18 + d * 1.4, ch.channel_id * 0.9)
+        meta = 0.6 + 0.4 * _vnoise(t * 0.02, 5.0)
+        heat = max(0.0, (1.6 - d) / 1.6) * 0.5 + flow * 0.5
+        color = _mix(self.BLACK, self.CRUST, min(1.0, heat * 1.4 * meta))
+        color = _mix(color, self.LAVA, max(0.0, heat - 0.35) * 1.3 * meta)
+
+        # Event layer: eruption surge travels outward from the vent with
+        # an eased front (fast attack, slow decay).
+        dt = t - self.eruption_t
+        if 0 <= dt < 6.0:
+            arrival = d * 0.9
+            local = dt - arrival
+            if local >= 0:
+                envelope = min(local * 4.0, 1.0) * math.exp(-local * 0.9)
+                if ch.near:
+                    envelope *= 0.5  # gentle swell beside the couch
+                color = _mix(color, self.SURGE, envelope)
+        return color
+
+
+class RefreshingRain(Effect):
+    """Cool rain: soft grey-blue base, individual droplet hits with fast
+    attack / slow decay, and occasional gust waves sweeping across."""
+
+    BASE = (0.04, 0.07, 0.12)
+    MIST = (0.10, 0.16, 0.22)
+    DROP = (0.45, 0.75, 0.85)
+
+    def __init__(self):
+        super().__init__()
+        self.drops: list[tuple[float, int]] = []  # (start_t, channel_id)
+        self.next_drop = 0.5
+        self.gust_t = -100.0
+        self.next_gust = 20.0
+
+    def tick(self, t):
+        if t >= self.next_drop:
+            self.drops.append((t, self.rng.randint(0, 15)))
+            self.next_drop = t + self.rng.uniform(0.15, 0.7)
+            self.drops = [d for d in self.drops if t - d[0] < 2.5]
+        if t >= self.next_gust:
+            self.gust_t = t
+            self.next_gust = t + self.rng.uniform(18.0, 45.0)
+
+    def render(self, t, ch):
+        # Base layer: misty drift.
+        mist = _fbm(t * 0.35, ch.channel_id * 1.1)
+        color = _mix(self.BASE, self.MIST, mist)
+
+        # Gust layer: a soft brightness wave sweeping left -> right.
+        gdt = t - self.gust_t
+        if 0 <= gdt < 3.0:
+            front = -1.2 + gdt * 1.0
+            g = math.exp(-((ch.x - front) ** 2) * 6.0) * (1.0 - gdt / 3.0)
+            color = _mix(color, self.MIST, g * 0.9)
+
+        # Droplet layer: sharp attack, ~1.5s shimmer decay. Couch lights
+        # get far fewer, softer hits.
+        for start, target in self.drops:
+            if target % 16 != ch.channel_id % 16:
+                continue
+            dt = t - start
+            if 0 <= dt < 2.0:
+                envelope = min(dt * 14.0, 1.0) * math.exp(-dt * 2.6)
+                if ch.near:
+                    envelope *= 0.35
+                color = _mix(color, self.DROP, envelope)
+        return color
+
+
 STREAM_EFFECTS: dict[str, type[Effect]] = {
     "fireplace": Fireplace,
     "ocean": Ocean,
@@ -193,6 +313,8 @@ STREAM_EFFECTS: dict[str, type[Effect]] = {
     "thunderstorm": Thunderstorm,
     "meteor_shower": MeteorShower,
     "lava": Lava,
+    "volcano_flow": VolcanoFlow,
+    "refreshing_rain": RefreshingRain,
 }
 
 # Near-field (couch) intensity ceiling and smoothing factor.

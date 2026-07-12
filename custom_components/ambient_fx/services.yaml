@@ -67,6 +67,8 @@ start_stream:
             - thunderstorm
             - meteor_shower
             - lava
+            - volcano_flow
+            - refreshing_rain
     area:
       name: Entertainment area
       description: Name of the entertainment area. Defaults to the first one.
