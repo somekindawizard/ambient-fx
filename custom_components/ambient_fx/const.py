@@ -120,6 +120,91 @@ EFFECTS: dict[str, dict] = {
             {"xy": (0.170, 0.360), "bri": 85},  # cyan
         ],
     },
+    # Ambee-inspired scenes (after the classic Ambee/Goldee catalog)
+    "volcano_flow": {
+        "name": "Volcano Flow",
+        "speed": 0.25,
+        "brightness": 45,
+        "colors": [
+            {"xy": (0.68, 0.31), "bri": 50},   # molten core red
+            {"xy": (0.60, 0.36), "bri": 22},   # cooling crust
+            {"xy": (0.64, 0.33), "bri": 60},   # lava surge
+            {"xy": (0.55, 0.40), "bri": 14},   # dim ash glow
+            {"xy": (0.66, 0.32), "bri": 40},   # ember flow
+        ],
+    },
+    "meteor_shower": {
+        "name": "Meteor Shower",
+        "speed": 0.80,
+        "brightness": 30,
+        "colors": [
+            {"xy": (0.155, 0.065), "bri": 14},  # night indigo
+            {"xy": (0.170, 0.100), "bri": 9},   # deep sky
+            {"xy": (0.280, 0.280), "bri": 85},  # white-blue streak
+            {"xy": (0.160, 0.080), "bri": 18},  # afterglow
+            {"xy": (0.150, 0.070), "bri": 11},  # dark field
+        ],
+    },
+    "refreshing_rain": {
+        "name": "Refreshing Rain",
+        "speed": 0.60,
+        "brightness": 50,
+        "colors": [
+            {"xy": (0.20, 0.22), "bri": 45},
+            {"xy": (0.22, 0.25), "bri": 58},
+            {"xy": (0.19, 0.20), "bri": 34},
+            {"xy": (0.24, 0.28), "bri": 62},
+            {"xy": (0.21, 0.23), "bri": 40},
+        ],
+    },
+    "beach_evening": {
+        "name": "Evening at the Beach",
+        "speed": 0.15,
+        "brightness": 55,
+        "colors": [
+            {"xy": (0.48, 0.41), "bri": 60},   # warm sand
+            {"xy": (0.18, 0.24), "bri": 45},   # sea blue
+            {"xy": (0.42, 0.30), "bri": 50},   # dusk pink
+            {"xy": (0.20, 0.28), "bri": 55},   # shallow water
+            {"xy": (0.45, 0.26), "bri": 40},   # horizon rose
+        ],
+    },
+    "in_venice": {
+        "name": "In Venice",
+        "speed": 0.20,
+        "brightness": 55,
+        "colors": [
+            {"xy": (0.55, 0.40), "bri": 55},   # terracotta
+            {"xy": (0.20, 0.32), "bri": 45},   # canal teal
+            {"xy": (0.50, 0.42), "bri": 65},   # golden reflection
+            {"xy": (0.23, 0.30), "bri": 40},   # shaded water
+            {"xy": (0.58, 0.38), "bri": 50},   # brick sunset
+        ],
+    },
+    "dusky_road": {
+        "name": "The Dusky Road",
+        "speed": 0.15,
+        "brightness": 40,
+        "colors": [
+            {"xy": (0.30, 0.20), "bri": 35},   # dusk purple
+            {"xy": (0.45, 0.40), "bri": 45},   # sodium amber
+            {"xy": (0.27, 0.18), "bri": 28},   # deep violet
+            {"xy": (0.50, 0.41), "bri": 40},   # far streetlight
+            {"xy": (0.33, 0.22), "bri": 24},   # fading horizon
+        ],
+    },
+    "sunrise": {
+        "name": "Sunrise",
+        "speed": 0.10,
+        "brightness": 60,
+        "colors": [
+            {"xy": (0.22, 0.20), "bri": 22},   # pre-dawn blue
+            {"xy": (0.40, 0.28), "bri": 45},   # first pink
+            {"xy": (0.50, 0.41), "bri": 65},   # golden light
+            {"xy": (0.35, 0.25), "bri": 35},   # soft rose
+            {"xy": (0.47, 0.44), "bri": 78},   # morning gold
+        ],
+    },
     "zen": {
         "name": "Zen",
         "speed": 0.10,

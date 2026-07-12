@@ -12,12 +12,19 @@ start:
             - ocean
             - aurora
             - sunset
+            - sunrise
             - forest
             - candlelight
             - thunderstorm
             - lava
             - party
             - zen
+            - volcano_flow
+            - meteor_shower
+            - refreshing_rain
+            - beach_evening
+            - in_venice
+            - dusky_road
     group:
       name: Room or zone
       description: Name of the Hue room or zone (as in the Hue app).
