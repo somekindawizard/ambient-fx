@@ -8,7 +8,6 @@ start:
       selector:
         select:
           options:
-            - swirl
             - fireplace
             - ocean
             - aurora
@@ -70,6 +69,7 @@ start_stream:
             - lava
             - volcano_flow
             - refreshing_rain
+            - swirl
     area:
       name: Entertainment area
       description: Name of the entertainment area. Defaults to the first one.
