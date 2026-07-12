@@ -72,6 +72,10 @@ def _mix(a: tuple, b: tuple, f: float) -> tuple:
 class Effect:
     """Base class. Subclasses implement render()."""
 
+    # Whether slow companion lights (BLE, ~1s cadence) should join this
+    # effect. Fast positional effects look wrong sampled that slowly.
+    companion_friendly = True
+
     def __init__(self) -> None:
         self.rng = random.Random()
 
@@ -352,6 +356,9 @@ class Swirl(Effect):
     ORBIT_PERIOD = 8.0   # seconds per revolution
     HUE_PERIOD = 45.0    # seconds per full color-wheel cycle
 
+    # Sampled at ~1s over BLE, an orbit reads as random pulses — skip.
+    companion_friendly = False
+
     def render(self, t, ch):
         # Angle of this light around the room center, and the swirl head.
         light_angle = math.atan2(ch.y, ch.x)
@@ -360,10 +367,15 @@ class Swirl(Effect):
         behind = (head_angle - light_angle) % (2.0 * math.pi)
 
         hue = t / self.HUE_PERIOD
-        # Head: tight bright core. Tail: exponential fade over ~a third
-        # of the circle, hue shifted slightly back for a rainbowed wake.
-        core = math.exp(-(behind * behind) * 6.0)
-        tail = math.exp(-behind * 2.2) * 0.6
+        # Head: broad bright core — wider than the angular gap between
+        # adjacent channels (~0.5 rad) so the head cross-fades smoothly
+        # from light to light instead of stepping. Tail: exponential
+        # fade over ~half the circle with a rainbowed wake.
+        core = math.exp(-(behind * behind) * 1.8)
+        # Lead-in ahead of the head so lights ramp up before it arrives.
+        ahead = (light_angle - head_angle) % (2.0 * math.pi)
+        core += math.exp(-(ahead * ahead) * 3.5) * 0.8
+        tail = math.exp(-behind * 1.5) * 0.55
         glow = min(1.0, core + tail)
 
         # Slow-breathing dim base so the room never goes black.

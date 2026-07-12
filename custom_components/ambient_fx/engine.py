@@ -150,6 +150,10 @@ class StreamEngine:
 
         # Companion lights: non-Hue HA light entities that participate in
         # the effect at a low update rate (BLE/HomeKit can't take 25 fps).
+        # Fast positional effects (e.g. swirl) opt out via the effect's
+        # companion_friendly flag.
+        if not STREAM_EFFECTS[effect_name].companion_friendly:
+            companions = None
         comp_channels: list[tuple[str, Channel]] = []
         for i, comp in enumerate(companions or []):
             ch = Channel(channel_id=200 + i, x=float(comp["x"]),
