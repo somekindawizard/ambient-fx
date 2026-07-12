@@ -41,6 +41,43 @@ start:
           min: 1
           max: 100
 
+start_stream:
+  name: Start streaming effect
+  description: >-
+    Start a spatial streaming effect (Hue Entertainment, 25 fps). Uses the
+    entertainment area's light positions. First use requires pressing the
+    bridge's link button once to register a streaming key.
+  fields:
+    effect:
+      name: Effect
+      required: true
+      selector:
+        select:
+          options:
+            - fireplace
+            - ocean
+            - aurora
+            - thunderstorm
+            - meteor_shower
+            - lava
+    area:
+      name: Entertainment area
+      description: Name of the entertainment area. Defaults to the first one.
+      example: Surround
+      selector:
+        text:
+    brightness:
+      name: Brightness
+      description: Overall intensity (1–150, default 100).
+      selector:
+        number:
+          min: 1
+          max: 150
+
+stop_stream:
+  name: Stop streaming effect
+  description: Stop the streaming effect and release the entertainment slot.
+
 stop:
   name: Stop effect
   description: Stop the animation on a Hue room or zone.

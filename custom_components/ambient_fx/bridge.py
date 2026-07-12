@@ -26,6 +26,7 @@ class HueFxBridge:
 
     def __init__(self, hass: HomeAssistant, host: str, api_key: str) -> None:
         self._hass = hass
+        self.host = host
         self._host = host
         self._api_key = api_key
         # The bridge uses a self-signed cert; the core hue integration
@@ -178,6 +179,71 @@ class HueFxBridge:
                     "color_temperature": {"mirek": 366},
                 },
             )
+
+    # MARK: Entertainment streaming support
+
+    async def register_streaming_app(self) -> tuple[str, str] | None:
+        """Register a new app key WITH a client (PSK) key for streaming.
+
+        Returns (application_key, psk_hex), or None if the link button
+        has not been pressed.
+        """
+        url = f"https://{self._host}/api"
+        body = {"devicetype": "ambient_fx#homeassistant",
+                "generateclientkey": True}
+        async with self._session.post(
+            url, json=body, timeout=aiohttp.ClientTimeout(total=10),
+        ) as resp:
+            data = await resp.json()
+        for item in data:
+            if "success" in item:
+                return item["success"]["username"], item["success"]["clientkey"]
+            if item.get("error", {}).get("type") == 101:
+                return None  # link button not pressed
+        raise RuntimeError(f"Unexpected registration response: {data}")
+
+    async def find_entertainment_configuration(
+            self, name: str | None) -> dict[str, Any] | None:
+        configs = await self.get_resources("entertainment_configuration")
+        if not configs:
+            return None
+        if name:
+            wanted = name.strip().casefold()
+            for config in configs:
+                if config["metadata"]["name"].strip().casefold() == wanted:
+                    return self._config_summary(config)
+            return None
+        return self._config_summary(configs[0])
+
+    @staticmethod
+    def _config_summary(config: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": config["id"],
+            "name": config["metadata"]["name"],
+            "status": config.get("status"),
+            "channels": config.get("channels", []),
+        }
+
+    async def set_stream_state(self, config_id: str, app_key: str,
+                               start: bool) -> None:
+        """Claim or release the entertainment stream slot.
+
+        Must be called with the SAME application key that will own the
+        DTLS session, so this bypasses the class-level key.
+        """
+        url = (f"https://{self._host}/clip/v2/resource/"
+               f"entertainment_configuration/{config_id}")
+        headers = {"hue-application-key": app_key}
+        body = {"action": "start" if start else "stop"}
+        async with self._session.put(
+            url, headers=headers, json=body,
+            timeout=aiohttp.ClientTimeout(total=10),
+        ) as resp:
+            data = await resp.json()
+            if resp.status >= 400 or data.get("errors"):
+                raise RuntimeError(
+                    f"Could not {'claim' if start else 'release'} the "
+                    f"entertainment stream: {data}")
 
     async def _grouped_light(self, group: dict[str, Any]) -> str | None:
         for gl in await self.get_resources("grouped_light"):

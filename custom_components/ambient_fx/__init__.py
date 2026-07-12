@@ -20,6 +20,8 @@ import homeassistant.helpers.config_validation as cv
 
 from .bridge import HueFxBridge
 from .const import DOMAIN, EFFECTS
+from .effects import STREAM_EFFECTS
+from .engine import LinkButtonNotPressed, StreamEngine
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,6 +35,12 @@ SERVICE_START_SCHEMA = vol.Schema({
 SERVICE_STOP_SCHEMA = vol.Schema({
     vol.Required("group"): cv.string,
     vol.Optional("turn_off", default=False): cv.boolean,
+})
+
+SERVICE_START_STREAM_SCHEMA = vol.Schema({
+    vol.Required("effect"): vol.In(sorted(STREAM_EFFECTS)),
+    vol.Optional("area"): cv.string,
+    vol.Optional("brightness"): vol.All(vol.Coerce(float), vol.Range(min=1, max=150)),
 })
 
 
@@ -63,13 +71,43 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         group = await _resolve_group(call)
         await bridge.stop_effect(group, turn_off=call.data["turn_off"])
 
+    engine = StreamEngine(hass, bridge, entry)
+    hass.data[DOMAIN][f"{entry.entry_id}_engine"] = engine
+
+    async def handle_start_stream(call: ServiceCall) -> None:
+        try:
+            await engine.start(
+                call.data["effect"],
+                call.data.get("area"),
+                call.data.get("brightness"),
+            )
+        except LinkButtonNotPressed as err:
+            raise HomeAssistantError(str(err)) from err
+        except RuntimeError as err:
+            raise HomeAssistantError(str(err)) from err
+
+    async def handle_stop_stream(call: ServiceCall) -> None:
+        await engine.stop()
+
     hass.services.async_register(DOMAIN, "start", handle_start, schema=SERVICE_START_SCHEMA)
     hass.services.async_register(DOMAIN, "stop", handle_stop, schema=SERVICE_STOP_SCHEMA)
+    hass.services.async_register(DOMAIN, "start_stream", handle_start_stream,
+                                 schema=SERVICE_START_STREAM_SCHEMA)
+    hass.services.async_register(DOMAIN, "stop_stream", handle_stop_stream)
+
+    async def _shutdown(event) -> None:
+        await engine.stop()
+
+    entry.async_on_unload(
+        hass.bus.async_listen_once("homeassistant_stop", _shutdown))
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    engine = hass.data.get(DOMAIN, {}).pop(f"{entry.entry_id}_engine", None)
+    if engine:
+        await engine.stop()
     hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
-    hass.services.async_remove(DOMAIN, "start")
-    hass.services.async_remove(DOMAIN, "stop")
+    for service in ("start", "stop", "start_stream", "stop_stream"):
+        hass.services.async_remove(DOMAIN, service)
     return True
