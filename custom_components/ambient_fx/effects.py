@@ -84,15 +84,18 @@ class Fireplace(Effect):
     HOT = (1.0, 0.6, 0.12)
 
     def render(self, t, ch):
+        # Minutes-scale swell: fire grows and dies down over time.
+        meta = 0.65 + 0.35 * _vnoise(t * 0.03, 3.0)
         if ch.near:
             # Couch ends: slow candle-like breathing embers.
-            f = _noise(t * 0.6, ch.channel_id)
-            return _mix(self.EMBER, self.FLAME, f * 0.5)
-        # TV wall: lively flame, each channel its own flicker phase.
-        base = _noise(t * 2.2, ch.channel_id * 0.31 + ch.x)
-        spike = _noise(t * 6.0, ch.channel_id * 0.77) ** 3
-        color = _mix(self.EMBER, self.FLAME, base)
-        return _mix(color, self.HOT, spike * 0.6)
+            f = _fbm(t * 0.5, ch.channel_id * 1.7)
+            return _mix(self.EMBER, self.FLAME, f * 0.5 * meta)
+        # TV wall: lively flame, each channel its own non-repeating
+        # flicker; sharp spark layer with cubic easing on top.
+        base = _fbm(t * 2.0, ch.channel_id * 0.31 + ch.x * 7.0)
+        spark = _vnoise(t * 6.5, ch.channel_id * 0.77) ** 3
+        color = _mix(self.EMBER, self.FLAME, base * meta)
+        return _mix(color, self.HOT, spark * 0.65 * meta)
 
 
 class Ocean(Effect):
@@ -101,15 +104,21 @@ class Ocean(Effect):
     CREST = (0.55, 0.85, 0.90)
 
     def render(self, t, ch):
-        # Swell travels rear -> front, then breaks across the strip x.
-        phase = math.sin(t * 0.5 - ch.y * 1.6 - ch.x * 2.2)
-        f = phase * 0.5 + 0.5
+        # Tide layer: sea state rises and calms over minutes.
+        tide = 0.6 + 0.4 * _vnoise(t * 0.025, 8.0)
+        # Swell travels rear -> front with noise-varied amplitude, then
+        # breaks across the strip x.
+        amp = 0.55 + 0.45 * _fbm(t * 0.15, ch.channel_id * 0.4)
+        phase = math.sin(t * 0.5 - ch.y * 1.6 - ch.x * 2.2) * amp
+        f = (phase * 0.5 + 0.5) * tide
         color = _mix(self.DEEP, self.TEAL, f)
-        if not ch.near and phase > 0.93:
-            # Foam crest only on far lights / strip.
-            color = _mix(color, self.CREST, (phase - 0.93) / 0.07)
+        if not ch.near and phase > 0.72:
+            # Foam crest on far lights / strip, eased in and out.
+            crest = (phase - 0.72) / 0.28
+            color = _mix(color, self.CREST, crest * crest * tide)
         if ch.near:
-            color = _mix(self.DEEP, self.TEAL, _noise(t * 0.35, ch.channel_id) * 0.7)
+            color = _mix(self.DEEP, self.TEAL,
+                         _fbm(t * 0.3, ch.channel_id * 1.3) * 0.7 * tide)
         return color
 
 
@@ -120,13 +129,17 @@ class Aurora(Effect):
     DARK = (0.01, 0.03, 0.08)
 
     def render(self, t, ch):
-        # Curtains drifting left -> right, violet fringe trailing.
-        band = math.sin(ch.x * 2.5 - t * 0.35 + math.sin(t * 0.12) * 2.0)
-        shimmer = _noise(t * 1.4, ch.channel_id * 0.5)
-        f = max(0.0, band) * (0.6 + shimmer * 0.4)
+        # Solar activity: displays strengthen and fade over minutes.
+        activity = 0.5 + 0.5 * _vnoise(t * 0.02, 11.0)
+        # Curtains drifting left -> right with noise-wandering path,
+        # violet fringe trailing behind each band.
+        wander = (_vnoise(t * 0.1, 4.0) - 0.5) * 3.0
+        band = math.sin(ch.x * 2.5 - t * 0.35 + wander)
+        shimmer = _fbm(t * 1.2, ch.channel_id * 0.5)
+        f = max(0.0, band) * (0.5 + shimmer * 0.5) * (0.4 + activity * 0.6)
         color = _mix(self.DARK, _mix(self.GREEN, self.CYAN, shimmer), f)
         fringe = max(0.0, -band - 0.3)
-        return _mix(color, self.VIOLET, fringe * 0.8)
+        return _mix(color, self.VIOLET, fringe * 0.8 * activity)
 
 
 class Thunderstorm(Effect):
@@ -147,17 +160,21 @@ class Thunderstorm(Effect):
             self.next_strike = t + self.rng.uniform(6.0, 18.0)
 
     def render(self, t, ch):
-        rain = _noise(t * 1.8, ch.channel_id * 0.9)
-        color = _mix(self.STORM, self.CLOUD, rain)
+        rain = _fbm(t * 1.6, ch.channel_id * 0.9)
+        # Storm intensity waxes and wanes over minutes.
+        storm = 0.55 + 0.45 * _vnoise(t * 0.03, 7.0)
+        color = _mix(self.STORM, self.CLOUD, rain * storm)
         dt = t - self.strike_t
-        if 0 <= dt < 0.9 and not ch.near:
+        if 0 <= dt < 1.2 and not ch.near:
             # Bolt hits at strike_x, propagates outward along the wall.
+            # Real lightning double-flashes: main stroke + re-strike.
             dist = abs(ch.x - self.strike_x)
-            delay = dist * 0.15
-            local = dt - delay
-            if 0 <= local < 0.35:
-                flash = math.exp(-local * 12.0)
-                color = _mix(color, self.BOLT, flash)
+            local = dt - dist * 0.15
+            if 0 <= local < 0.6:
+                flash = math.exp(-local * 14.0)
+                if local > 0.12:
+                    flash += math.exp(-(local - 0.12) * 16.0) * 0.6
+                color = _mix(color, self.BOLT, min(1.0, flash))
         elif 0 <= dt < 1.5 and ch.near:
             # Couch lights: only a soft distant glow, never a hard flash.
             color = _mix(color, (0.3, 0.32, 0.4), math.exp(-dt * 3.0) * 0.4)
@@ -182,14 +199,19 @@ class MeteorShower(Effect):
             self.next_meteor = t + self.rng.uniform(4.0, 11.0)
 
     def render(self, t, ch):
-        tw = _noise(t * 0.8, ch.channel_id * 1.3)
+        tw = _fbm(t * 0.7, ch.channel_id * 1.3)
         color = _mix(self.SKY, self.STARLIGHT, tw)
         dt = t - self.meteor_t
-        if 0 <= dt < 1.4 and not ch.near:
-            # Head sweeps across x in ~1.2s; gaussian brightness around it.
+        if 0 <= dt < 2.2 and not ch.near:
+            # Head sweeps across x in ~1.2s with an asymmetric glow:
+            # tight leading edge, long fading trail behind it.
             head = (-1.1 + dt / 1.2 * 2.2) * self.direction
-            d = abs(ch.x - head)
-            color = _mix(color, self.METEOR, math.exp(-(d * d) * 18.0))
+            offset = (ch.x - head) * self.direction
+            if offset > 0:
+                glow = math.exp(-(offset * offset) * 24.0)          # ahead
+            else:
+                glow = math.exp(offset * 3.5) * math.exp(-dt * 1.2)  # trail
+            color = _mix(color, self.METEOR, min(1.0, glow))
         return color
 
 
@@ -200,11 +222,14 @@ class Lava(Effect):
     MAGENTA = (0.55, 0.02, 0.35)
 
     def render(self, t, ch):
-        blob1 = math.exp(-((ch.x - math.sin(t * 0.11) * 0.9) ** 2) * 3.0)
-        blob2 = math.exp(-((ch.x - math.sin(t * 0.07 + 2.1) * 0.9) ** 2) * 3.0)
+        # Blobs wander on non-repeating noise paths instead of sine orbits.
+        p1 = (_vnoise(t * 0.06, 21.0) - 0.5) * 2.2
+        p2 = (_vnoise(t * 0.045, 34.0) - 0.5) * 2.2
+        blob1 = math.exp(-((ch.x - p1) ** 2) * 3.0)
+        blob2 = math.exp(-((ch.x - p2) ** 2) * 3.0)
         color = _mix(self.COOL, self.RED, blob1)
         color = _mix(color, self.MAGENTA, blob2 * 0.8)
-        heat = _noise(t * 0.4, ch.channel_id)
+        heat = _fbm(t * 0.35, ch.channel_id * 0.8)
         return _mix(color, self.ORANGE, blob1 * blob2 * heat)
 
 
