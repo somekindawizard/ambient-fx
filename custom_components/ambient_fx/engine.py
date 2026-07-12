@@ -1,10 +1,9 @@
-"""Hue Entertainment streaming engine (DTLS) for Ambient FX.
+"""Hue Entertainment streaming engine for Ambient FX.
 
 Streams HueStream v2 frames at 25 fps over DTLS-PSK to the bridge's
-entertainment port (2100). The DTLS transport is an `openssl s_client`
-subprocess (present in the HA container) — the same approach used by
-diyHue and shell-based Hue Entertainment clients — because pure-Python
-DTLS-PSK is not installable on HA OS.
+entertainment port (2100) using the bundled pure-Python DTLS client
+(the HA container has no openssl binary and no installable DTLS lib).
+The blocking socket work runs in an executor thread.
 
 Streaming requires its own bridge application key with a client (PSK)
 key, obtained via one link-button registration; the core Hue
@@ -13,11 +12,12 @@ integration's key has no PSK and cannot stream.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import struct
+import threading
 import time
 
+from .dtls import DTLSPSKConnection
 from .effects import NEAR_GAIN, NEAR_SMOOTH, STREAM_EFFECTS, Channel
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,8 +34,8 @@ class StreamEngine:
         self._hass = hass
         self._bridge = bridge  # HueFxBridge (REST client)
         self._entry = entry
-        self._proc: asyncio.subprocess.Process | None = None
-        self._task: asyncio.Task | None = None
+        self._stop_event: threading.Event | None = None
+        self._job = None
         self._config_id: str | None = None
         self.active_effect: str | None = None
 
@@ -88,34 +88,32 @@ class StreamEngine:
         # Box is actively syncing — we never steal an active stream).
         await self._bridge.set_stream_state(self._config_id, key, start=True)
 
-        try:
-            await self._open_dtls(key, psk)
-        except Exception:
-            await self._bridge.set_stream_state(self._config_id, key, start=False)
-            raise
-
         effect = STREAM_EFFECTS[effect_name]()
         gain = max(0.05, min(1.5, (brightness or 100) / 100))
+        stop_event = threading.Event()
+        self._stop_event = stop_event
         self.active_effect = effect_name
-        self._task = asyncio.create_task(
-            self._render_loop(effect, channels, gain))
+        config_id = self._config_id
+        host = self._bridge.host
+
+        def _thread() -> None:
+            self._stream_thread(host, config_id, key, psk, effect,
+                                channels, gain, stop_event)
+
+        self._job = self._hass.async_add_executor_job(_thread)
         _LOGGER.info("Streaming '%s' to area '%s' (%d channels)",
                      effect_name, config["name"], len(channels))
 
     async def stop(self) -> None:
-        if self._task:
-            self._task.cancel()
+        if self._stop_event:
+            self._stop_event.set()
+            self._stop_event = None
+        if self._job:
             try:
-                await self._task
-            except (asyncio.CancelledError, Exception):
-                pass
-            self._task = None
-        if self._proc:
-            try:
-                self._proc.terminate()
-            except ProcessLookupError:
-                pass
-            self._proc = None
+                await self._job
+            except Exception as err:
+                _LOGGER.debug("Stream thread ended with: %s", err)
+            self._job = None
         if self._config_id:
             key = self._entry.data.get("stream_key")
             if key:
@@ -127,53 +125,25 @@ class StreamEngine:
             self._config_id = None
         self.active_effect = None
 
-    # MARK: DTLS transport
+    # MARK: Blocking stream thread (runs in executor)
 
-    async def _open_dtls(self, key: str, psk_hex: str) -> None:
-        host = self._bridge.host
-        self._proc = await asyncio.create_subprocess_exec(
-            "openssl", "s_client",
-            "-dtls1_2",
-            "-cipher", "PSK-AES128-GCM-SHA256",
-            "-psk_identity", key,
-            "-psk", psk_hex,
-            "-connect", f"{host}:2100",
-            "-quiet",
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        # Give the handshake a moment; fail fast if openssl exited.
-        await asyncio.sleep(0.8)
-        if self._proc.returncode is not None:
-            stderr = (await self._proc.stderr.read()).decode(errors="replace")
-            self._proc = None
-            raise RuntimeError(f"DTLS handshake failed: {stderr.strip()[:300]}")
+    def _stream_thread(self, host: str, config_id: str, key: str,
+                       psk_hex: str, effect, channels: list[Channel],
+                       gain: float, stop_event: threading.Event) -> None:
+        conn = DTLSPSKConnection(host, 2100, key, bytes.fromhex(psk_hex))
+        try:
+            conn.handshake()
+        except Exception:
+            conn.close()
+            self.active_effect = None
+            raise
 
-    def _frame(self, seq: int, colors: dict[int, tuple]) -> bytes:
-        buf = bytearray(b"HueStream")
-        buf += bytes([0x02, 0x00, seq & 0xFF, 0x00, 0x00, 0x00, 0x00])
-        buf += self._config_id.encode("ascii")
-        for channel_id, (r, g, b) in colors.items():
-            buf += bytes([channel_id])
-            buf += struct.pack(
-                ">HHH",
-                int(max(0.0, min(1.0, r)) * 65535),
-                int(max(0.0, min(1.0, g)) * 65535),
-                int(max(0.0, min(1.0, b)) * 65535),
-            )
-        return bytes(buf)
-
-    # MARK: Render loop
-
-    async def _render_loop(self, effect, channels: list[Channel],
-                           gain: float) -> None:
         start = time.monotonic()
         seq = 0
         smoothed: dict[int, tuple] = {}
         interval = 1.0 / FPS
         try:
-            while True:
+            while not stop_event.is_set():
                 t = time.monotonic() - start
                 effect.tick(t)
                 colors: dict[int, tuple] = {}
@@ -191,18 +161,31 @@ class StreamEngine:
                     colors[ch.channel_id] = (
                         (r * gain) ** 2.2, (g * gain) ** 2.2, (b * gain) ** 2.2)
 
-                frame = self._frame(seq, colors)
+                conn.send(self._frame(config_id, seq, colors))
                 seq += 1
-                if self._proc is None or self._proc.returncode is not None:
-                    _LOGGER.warning("DTLS transport closed; stopping stream")
-                    break
-                self._proc.stdin.write(frame)
-                await self._proc.stdin.drain()
-                await asyncio.sleep(interval)
-        except asyncio.CancelledError:
-            raise
-        except (BrokenPipeError, ConnectionResetError):
-            _LOGGER.warning("Bridge closed the stream (another app may have "
-                            "taken the entertainment slot)")
+                # Drift-free pacing.
+                next_t = start + seq * interval
+                delay = next_t - time.monotonic()
+                if delay > 0:
+                    stop_event.wait(delay)
+        except OSError as err:
+            _LOGGER.warning("Stream transport closed (%s) — another app may "
+                            "have taken the entertainment slot", err)
         finally:
+            conn.close()
             self.active_effect = None
+
+    @staticmethod
+    def _frame(config_id: str, seq: int, colors: dict[int, tuple]) -> bytes:
+        buf = bytearray(b"HueStream")
+        buf += bytes([0x02, 0x00, seq & 0xFF, 0x00, 0x00, 0x00, 0x00])
+        buf += config_id.encode("ascii")
+        for channel_id, (r, g, b) in colors.items():
+            buf += bytes([channel_id])
+            buf += struct.pack(
+                ">HHH",
+                int(max(0.0, min(1.0, r)) * 65535),
+                int(max(0.0, min(1.0, g)) * 65535),
+                int(max(0.0, min(1.0, b)) * 65535),
+            )
+        return bytes(buf)
