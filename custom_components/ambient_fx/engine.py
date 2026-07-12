@@ -63,7 +63,8 @@ class StreamEngine:
 
     async def start(self, effect_name: str, area_name: str | None,
                     brightness: float | None,
-                    immersive: bool = False) -> None:
+                    immersive: bool = False,
+                    companions: list[dict] | None = None) -> None:
         await self.stop()
 
         key, psk = await self._ensure_stream_key()
@@ -92,6 +93,15 @@ class StreamEngine:
         # Box is actively syncing — we never steal an active stream).
         await self._bridge.set_stream_state(self._config_id, key, start=True)
 
+        # Companion lights: non-Hue HA light entities that participate in
+        # the effect at a low update rate (BLE/HomeKit can't take 25 fps).
+        comp_channels: list[tuple[str, Channel]] = []
+        for i, comp in enumerate(companions or []):
+            ch = Channel(channel_id=200 + i, x=float(comp["x"]),
+                         y=float(comp["y"]), z=float(comp["z"]))
+            ch.near = ch.is_near_position and not immersive
+            comp_channels.append((comp["entity_id"], ch))
+
         effect = STREAM_EFFECTS[effect_name]()
         gain = max(0.05, min(1.5, (brightness or 100) / 100))
         stop_event = threading.Event()
@@ -102,7 +112,7 @@ class StreamEngine:
 
         def _thread() -> None:
             self._stream_thread(host, config_id, key, psk, effect,
-                                channels, gain, stop_event)
+                                channels, gain, stop_event, comp_channels)
 
         self._job = self._hass.async_add_executor_job(_thread)
         _LOGGER.info("Streaming '%s' to area '%s' (%d channels)",
@@ -131,9 +141,33 @@ class StreamEngine:
 
     # MARK: Blocking stream thread (runs in executor)
 
+    COMPANION_INTERVAL = 1.5  # seconds between HA light updates (BLE pace)
+
+    def _push_companion(self, entity_id: str, r: float, g: float,
+                        b: float) -> None:
+        """Send a color to an HA light entity from the stream thread."""
+        m = max(r, g, b)
+        if m < 0.02:
+            data = {"entity_id": entity_id, "brightness": 3,
+                    "transition": self.COMPANION_INTERVAL}
+        else:
+            data = {
+                "entity_id": entity_id,
+                "rgb_color": [int(r / m * 255), int(g / m * 255), int(b / m * 255)],
+                "brightness": max(3, int(min(1.0, m) * 255)),
+                "transition": self.COMPANION_INTERVAL,
+            }
+
+        def _call() -> None:
+            self._hass.async_create_task(
+                self._hass.services.async_call("light", "turn_on", data))
+
+        self._hass.loop.call_soon_threadsafe(_call)
+
     def _stream_thread(self, host: str, config_id: str, key: str,
                        psk_hex: str, effect, channels: list[Channel],
-                       gain: float, stop_event: threading.Event) -> None:
+                       gain: float, stop_event: threading.Event,
+                       comp_channels: list[tuple[str, Channel]] | None = None) -> None:
         conn = DTLSPSKConnection(host, 2100, key, bytes.fromhex(psk_hex))
         try:
             conn.handshake()
@@ -146,10 +180,30 @@ class StreamEngine:
         seq = 0
         smoothed: dict[int, tuple] = {}
         interval = 1.0 / FPS
+        last_comp_push = -10.0
+        last_comp_color: dict[str, tuple] = {}
         try:
             while not stop_event.is_set():
                 t = time.monotonic() - start
                 effect.tick(t)
+
+                # Companion lights: sample the effect at their position
+                # on a slow cadence, pushing only meaningful changes.
+                if comp_channels and t - last_comp_push >= self.COMPANION_INTERVAL:
+                    last_comp_push = t
+                    for entity_id, cch in comp_channels:
+                        cr, cg, cb = effect.render(t, cch)
+                        if cch.near:
+                            cr, cg, cb = (cr * NEAR_GAIN, cg * NEAR_GAIN,
+                                          cb * NEAR_GAIN)
+                        cr, cg, cb = (min(1.0, cr * gain), min(1.0, cg * gain),
+                                      min(1.0, cb * gain))
+                        prev = last_comp_color.get(entity_id)
+                        if prev and sum(abs(prev[i] - c) for i, c in
+                                        enumerate((cr, cg, cb))) < 0.05:
+                            continue
+                        last_comp_color[entity_id] = (cr, cg, cb)
+                        self._push_companion(entity_id, cr, cg, cb)
                 colors: dict[int, tuple] = {}
                 for ch in channels:
                     r, g, b = effect.render(t, ch)

@@ -42,6 +42,12 @@ SERVICE_START_STREAM_SCHEMA = vol.Schema({
     vol.Optional("area"): cv.string,
     vol.Optional("brightness"): vol.All(vol.Coerce(float), vol.Range(min=1, max=150)),
     vol.Optional("immersive", default=False): cv.boolean,
+    vol.Optional("companions"): vol.All(cv.ensure_list, [vol.Schema({
+        vol.Required("entity_id"): cv.entity_id,
+        vol.Required("x"): vol.Coerce(float),
+        vol.Required("y"): vol.Coerce(float),
+        vol.Required("z"): vol.Coerce(float),
+    })]),
 })
 
 
@@ -82,6 +88,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 call.data.get("area"),
                 call.data.get("brightness"),
                 immersive=call.data["immersive"],
+                companions=call.data.get("companions"),
             )
         except LinkButtonNotPressed as err:
             raise HomeAssistantError(str(err)) from err

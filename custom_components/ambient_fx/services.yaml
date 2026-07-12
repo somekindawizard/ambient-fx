@@ -90,6 +90,15 @@ start_stream:
         Off = cozy mode (couch lights stay soft and smooth).
       selector:
         boolean:
+    companions:
+      name: Companion lights
+      description: >-
+        Non-Hue HA lights that join the effect at a slow update rate
+        (~1.5s, for BLE/HomeKit lights). List of {entity_id, x, y, z}
+        using entertainment-space coordinates.
+      example: "[{entity_id: light.ball, x: 0.98, y: 0.99, z: -1.0}]"
+      selector:
+        object:
 
 stop_stream:
   name: Stop streaming effect
