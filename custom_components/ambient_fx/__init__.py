@@ -25,11 +25,19 @@ from .engine import LinkButtonNotPressed, StreamEngine
 
 _LOGGER = logging.getLogger(__name__)
 
+COMPANIONS_SCHEMA = vol.All(cv.ensure_list, [vol.Schema({
+    vol.Required("entity_id"): cv.entity_id,
+    vol.Required("x"): vol.Coerce(float),
+    vol.Required("y"): vol.Coerce(float),
+    vol.Required("z"): vol.Coerce(float),
+})])
+
 SERVICE_START_SCHEMA = vol.Schema({
     vol.Required("effect"): vol.In(sorted(EFFECTS)),
     vol.Required("group"): cv.string,
     vol.Optional("speed"): vol.All(vol.Coerce(float), vol.Range(min=0, max=1)),
     vol.Optional("brightness"): vol.All(vol.Coerce(float), vol.Range(min=1, max=100)),
+    vol.Optional("companions"): COMPANIONS_SCHEMA,
 })
 
 SERVICE_STOP_SCHEMA = vol.Schema({
@@ -42,12 +50,7 @@ SERVICE_START_STREAM_SCHEMA = vol.Schema({
     vol.Optional("area"): cv.string,
     vol.Optional("brightness"): vol.All(vol.Coerce(float), vol.Range(min=1, max=150)),
     vol.Optional("immersive", default=False): cv.boolean,
-    vol.Optional("companions"): vol.All(cv.ensure_list, [vol.Schema({
-        vol.Required("entity_id"): cv.entity_id,
-        vol.Required("x"): vol.Coerce(float),
-        vol.Required("y"): vol.Coerce(float),
-        vol.Required("z"): vol.Coerce(float),
-    })]),
+    vol.Optional("companions"): COMPANIONS_SCHEMA,
 })
 
 
@@ -72,10 +75,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             speed=call.data.get("speed"),
             brightness=call.data.get("brightness"),
         )
+        # Companion lights can't join a bridge scene, so mirror its
+        # palette on them with a matching slow cycle.
+        companions = call.data.get("companions")
+        if companions:
+            engine.start_palette(effect, companions, call.data.get("brightness"))
+        else:
+            engine.stop_palette()
         _LOGGER.info("Started effect %s on %s", call.data["effect"], group["name"])
 
     async def handle_stop(call: ServiceCall) -> None:
         group = await _resolve_group(call)
+        engine.stop_palette()
         await bridge.stop_effect(group, turn_off=call.data["turn_off"])
 
     engine = StreamEngine(hass, bridge, entry)

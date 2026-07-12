@@ -12,7 +12,9 @@ integration's key has no PSK and cannot stream.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import random
 import struct
 import threading
 import time
@@ -37,6 +39,7 @@ class StreamEngine:
         self._stop_event: threading.Event | None = None
         self._job = None
         self._config_id: str | None = None
+        self._palette_task: asyncio.Task | None = None
         self.active_effect: str | None = None
 
     # MARK: Credentials
@@ -60,6 +63,58 @@ class StreamEngine:
         return key, psk
 
     # MARK: Lifecycle
+
+    # MARK: Palette cycling (companions following a bridge dynamic scene)
+
+    @staticmethod
+    def _xy_to_rgb(x: float, y: float, bri: float) -> tuple[int, int, int]:
+        """Approximate CIE xy + brightness -> 8-bit RGB."""
+        if y <= 0:
+            return (0, 0, 0)
+        Y = 1.0
+        X = (Y / y) * x
+        Z = (Y / y) * (1.0 - x - y)
+        r = X * 1.656 - Y * 0.355 - Z * 0.255
+        g = -X * 0.707 + Y * 1.655 + Z * 0.036
+        b = X * 0.052 - Y * 0.121 + Z * 1.012
+        m = max(r, g, b, 0.0001)
+        scale = 255.0 * max(0.05, min(1.0, bri / 100.0))
+        return tuple(int(max(0.0, c) / m * scale) for c in (r, g, b))
+
+    def start_palette(self, effect: dict, companions: list[dict],
+                      brightness: float | None) -> None:
+        """Cycle a bridge scene's palette on companion lights, mirroring
+        the bridge's own dynamic-scene behavior at a BLE-friendly pace."""
+        self.stop_palette()
+        speed = effect.get("speed", 0.3)
+        period = 3.0 + (1.0 - speed) * 12.0  # fast scenes ~3s, slow ~15s
+        bri_scale = 1.0
+        if brightness is not None:
+            bri_scale = max(0.05, min(2.0, brightness / (effect.get("brightness") or 50)))
+        colors = effect["colors"]
+        entity_ids = [c["entity_id"] for c in companions]
+
+        async def _loop() -> None:
+            rng = random.Random()
+            while True:
+                for entity_id in entity_ids:
+                    c = rng.choice(colors)
+                    r, g, b = self._xy_to_rgb(c["xy"][0], c["xy"][1],
+                                              min(100.0, c["bri"] * bri_scale))
+                    await self._hass.services.async_call(
+                        "light", "turn_on",
+                        {"entity_id": entity_id,
+                         "rgb_color": [r, g, b],
+                         "brightness": max(3, int(min(100.0, c["bri"] * bri_scale) * 2.55)),
+                         "transition": period * 0.9})
+                await asyncio.sleep(period)
+
+        self._palette_task = self._hass.loop.create_task(_loop())
+
+    def stop_palette(self) -> None:
+        if self._palette_task:
+            self._palette_task.cancel()
+            self._palette_task = None
 
     async def start(self, effect_name: str, area_name: str | None,
                     brightness: float | None,
@@ -119,6 +174,7 @@ class StreamEngine:
                      effect_name, config["name"], len(channels))
 
     async def stop(self) -> None:
+        self.stop_palette()
         if self._stop_event:
             self._stop_event.set()
             self._stop_event = None
