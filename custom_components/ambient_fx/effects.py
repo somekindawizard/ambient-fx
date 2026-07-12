@@ -384,7 +384,13 @@ class Swirl(Effect):
         # on/off threshold.
         base = 0.14 + 0.04 * _fbm(t * 0.3, ch.channel_id * 0.9)
         level = base + (1.0 - base) * glow
-        r, g, b = _hsv_to_rgb(hue - behind * 0.04, 0.85, 1.0)
+
+        # Rainbow wake: the hue offset must be continuous around the
+        # whole circle — sin(behind/2) is zero at both ends of the wrap,
+        # so a light's color dissolves through the cycle instead of
+        # snapping when the head passes it.
+        wake = math.sin(behind * 0.5) * 0.10
+        r, g, b = _hsv_to_rgb(hue - wake, 0.85, 1.0)
         return (r * level, g * level, b * level)
 
 
