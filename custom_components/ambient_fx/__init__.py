@@ -41,6 +41,7 @@ SERVICE_START_STREAM_SCHEMA = vol.Schema({
     vol.Required("effect"): vol.In(sorted(STREAM_EFFECTS)),
     vol.Optional("area"): cv.string,
     vol.Optional("brightness"): vol.All(vol.Coerce(float), vol.Range(min=1, max=150)),
+    vol.Optional("immersive", default=False): cv.boolean,
 })
 
 
@@ -80,6 +81,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 call.data["effect"],
                 call.data.get("area"),
                 call.data.get("brightness"),
+                immersive=call.data["immersive"],
             )
         except LinkButtonNotPressed as err:
             raise HomeAssistantError(str(err)) from err

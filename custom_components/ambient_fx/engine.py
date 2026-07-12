@@ -62,7 +62,8 @@ class StreamEngine:
     # MARK: Lifecycle
 
     async def start(self, effect_name: str, area_name: str | None,
-                    brightness: float | None) -> None:
+                    brightness: float | None,
+                    immersive: bool = False) -> None:
         await self.stop()
 
         key, psk = await self._ensure_stream_key()
@@ -72,15 +73,18 @@ class StreamEngine:
             raise RuntimeError("No entertainment area found on the bridge")
         self._config_id = config["id"]
 
-        channels = [
-            Channel(
+        channels = []
+        for c in config["channels"]:
+            ch = Channel(
                 channel_id=c["channel_id"],
                 x=c["position"]["x"],
                 y=c["position"]["y"],
                 z=c["position"]["z"],
             )
-            for c in config["channels"]
-        ]
+            # Cozy mode softens near-field (couch) lights; immersive
+            # mode makes every light a full scene participant.
+            ch.near = ch.is_near_position and not immersive
+            channels.append(ch)
         if not channels:
             raise RuntimeError("Entertainment area has no channels")
 

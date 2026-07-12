@@ -82,6 +82,14 @@ start_stream:
         number:
           min: 1
           max: 150
+    immersive:
+      name: Immersive
+      description: >-
+        Full immersion: near-field (couch) lights become full scene
+        participants — flames, lightning and droplets at full intensity.
+        Off = cozy mode (couch lights stay soft and smooth).
+      selector:
+        boolean:
 
 stop_stream:
   name: Stop streaming effect

@@ -22,10 +22,14 @@ class Channel:
     x: float
     y: float
     z: float
+    # Near-field light (beside the viewer, e.g. couch ends): rendered
+    # gently. The engine leaves this False in immersive mode, making
+    # every light a full scene participant.
+    near: bool = False
 
     @property
-    def near(self) -> bool:
-        """Near-field light (beside the viewer, e.g. couch ends)."""
+    def is_near_position(self) -> bool:
+        """Whether this channel sits in the near-field (rear + low)."""
         return self.y < 0 and self.z < 0
 
 
