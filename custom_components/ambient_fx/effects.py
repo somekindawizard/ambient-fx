@@ -491,9 +491,9 @@ class Candle(Effect):
 
         level = max(0.08, min(1.0, level)) ** 0.55  # perceptual fade
 
-        # Real flame color: dim = deep orange-red, bright = warm amber.
-        hue = 0.035 + level * 0.038
-        sat = 0.96 - level * 0.14
+        # Candle color (~1850K): dim = warm orange, bright = amber-yellow.
+        hue = 0.072 + level * 0.042
+        sat = 0.92 - level * 0.16
         r, g, b = _hsv_to_rgb(hue, sat, 1.0)
         return (r * level, g * level, b * level)
 
