@@ -47,6 +47,7 @@ class StreamEngine:
         self._job = None
         self._config_id: str | None = None
         self._palette_task: asyncio.Task | None = None
+        self._comp_busy: dict[str, bool] = {}
         self.active_effect: str | None = None
 
     # MARK: Credentials
@@ -151,9 +152,19 @@ class StreamEngine:
         if not channels:
             raise RuntimeError("Entertainment area has no channels")
 
-        # Take ownership of the streaming slot (fails if e.g. the Sync
-        # Box is actively syncing — we never steal an active stream).
-        await self._bridge.set_stream_state(self._config_id, key, start=True)
+        # Take ownership of the streaming slot. When switching effects
+        # the bridge may still be tearing down the previous session for
+        # a moment, so retry briefly before giving up. (A slot held by
+        # another app, e.g. the Sync Box mid-sync, still fails cleanly.)
+        for attempt in range(4):
+            try:
+                await self._bridge.set_stream_state(self._config_id, key,
+                                                    start=True)
+                break
+            except RuntimeError:
+                if attempt == 3:
+                    raise
+                await asyncio.sleep(0.5)
 
         # Companion lights: non-Hue HA light entities that participate in
         # the effect at a low update rate (BLE/HomeKit can't take 25 fps).
@@ -226,8 +237,16 @@ class StreamEngine:
             }
 
         def _call() -> None:
-            self._hass.async_create_task(
+            # Never stack BLE writes: if the previous push to this light
+            # is still in flight (slow write / retry), skip this one —
+            # a fresher color is already coming next interval.
+            if self._comp_busy.get(entity_id):
+                return
+            self._comp_busy[entity_id] = True
+            task = self._hass.async_create_task(
                 self._hass.services.async_call("light", "turn_on", data))
+            task.add_done_callback(
+                lambda _t, e=entity_id: self._comp_busy.pop(e, None))
 
         self._hass.loop.call_soon_threadsafe(_call)
 
