@@ -141,9 +141,9 @@ class Aurora(Effect):
         activity = 0.5 + 0.5 * _vnoise(t * 0.02, 11.0)
         # Curtains drifting left -> right with noise-wandering path,
         # violet fringe trailing behind each band.
-        wander = (_vnoise(t * 0.1, 4.0) - 0.5) * 3.0
-        band = math.sin(ch.x * 2.5 - t * 0.35 + wander)
-        shimmer = _fbm(t * 1.2, ch.channel_id * 0.5)
+        wander = (_vnoise(t * 0.15, 4.0) - 0.5) * 3.0
+        band = math.sin(ch.x * 2.5 - t * 0.55 + wander)
+        shimmer = _fbm(t * 1.7, ch.channel_id * 0.5)
         f = max(0.0, band) * (0.5 + shimmer * 0.5) * (0.4 + activity * 0.6)
         color = _mix(self.DARK, _mix(self.GREEN, self.CYAN, shimmer), f)
         fringe = max(0.0, -band - 0.3)
