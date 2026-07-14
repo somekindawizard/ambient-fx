@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import random
 import struct
 import threading
@@ -24,7 +25,13 @@ from .effects import NEAR_GAIN, NEAR_SMOOTH, STREAM_EFFECTS, Channel
 
 _LOGGER = logging.getLogger(__name__)
 
-FPS = 25
+FPS = 50  # Hue entertainment handles up to ~50-60 updates/sec
+
+# Engine-wide temporal smoothing ("phosphor trail"): every channel is
+# low-passed toward its rendered target so no frame can snap. Time
+# constants in seconds; near-field (couch) channels smooth much harder.
+SMOOTH_TAU = 0.10
+SMOOTH_TAU_NEAR = 0.60
 
 
 class LinkButtonNotPressed(Exception):
@@ -240,6 +247,8 @@ class StreamEngine:
         seq = 0
         smoothed: dict[int, tuple] = {}
         interval = 1.0 / FPS
+        alpha = 1.0 - math.exp(-interval / SMOOTH_TAU)
+        alpha_near = 1.0 - math.exp(-interval / SMOOTH_TAU_NEAR)
         last_comp_push = -10.0
         last_comp_color: dict[str, tuple] = {}
         try:
@@ -268,13 +277,16 @@ class StreamEngine:
                 for ch in channels:
                     r, g, b = effect.render(t, ch)
                     if ch.near:
-                        # Near-field (couch) lights: cap + low-pass.
+                        # Near-field (couch) lights: intensity cap.
                         r, g, b = r * NEAR_GAIN, g * NEAR_GAIN, b * NEAR_GAIN
-                        prev = smoothed.get(ch.channel_id, (r, g, b))
-                        r = prev[0] + (r - prev[0]) * NEAR_SMOOTH
-                        g = prev[1] + (g - prev[1]) * NEAR_SMOOTH
-                        b = prev[2] + (b - prev[2]) * NEAR_SMOOTH
-                        smoothed[ch.channel_id] = (r, g, b)
+                    # Temporal smoothing on every channel — frames pull
+                    # lights toward their target rather than setting it.
+                    a = alpha_near if ch.near else alpha
+                    prev = smoothed.get(ch.channel_id, (r, g, b))
+                    r = prev[0] + (r - prev[0]) * a
+                    g = prev[1] + (g - prev[1]) * a
+                    b = prev[2] + (b - prev[2]) * a
+                    smoothed[ch.channel_id] = (r, g, b)
                     # Perceptual gamma so dim scenes don't posterize.
                     colors[ch.channel_id] = (
                         (r * gain) ** 2.2, (g * gain) ** 2.2, (b * gain) ** 2.2)
