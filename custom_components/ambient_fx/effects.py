@@ -491,9 +491,11 @@ class Candle(Effect):
 
         level = max(0.08, min(1.0, level)) ** 0.55  # perceptual fade
 
-        # Candle color (~1850K): dim = warm orange, bright = amber-yellow.
-        hue = 0.072 + level * 0.042
-        sat = 0.92 - level * 0.16
+        # Candle color (~1850K): dim = warm orange, bright = golden amber.
+        # Cap the hue short of yellow and keep saturation high — pale
+        # yellow reads green on LED gamuts.
+        hue = 0.070 + level * 0.026
+        sat = 0.95 - level * 0.07
         r, g, b = _hsv_to_rgb(hue, sat, 1.0)
         return (r * level, g * level, b * level)
 
