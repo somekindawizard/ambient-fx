@@ -205,6 +205,20 @@ EFFECTS: dict[str, dict] = {
             {"xy": (0.47, 0.44), "bri": 78},   # morning gold
         ],
     },
+    # Evidence-based: narrow-band green (~520nm) shown in clinical trials
+    # (Harvard/Burstein migraine work, Arizona chronic-pain trials) to be
+    # the least photophobia-aggravating color. Static by design.
+    "green_relief": {
+        "name": "Green Relief",
+        "speed": 0.0,
+        "brightness": 45,
+        "colors": [
+            {"xy": (0.17, 0.70), "bri": 50},
+            {"xy": (0.17, 0.70), "bri": 50},
+            {"xy": (0.17, 0.70), "bri": 50},
+            {"xy": (0.17, 0.70), "bri": 50},
+        ],
+    },
     "zen": {
         "name": "Zen",
         "speed": 0.10,

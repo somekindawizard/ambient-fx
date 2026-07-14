@@ -500,9 +500,19 @@ class Candle(Effect):
         return (r * level, g * level, b * level)
 
 
+class BreathingWarm(Breathing):
+    """Evening wind-down variant of the breathing guide: same coherent
+    5.5s/5.5s cadence, but in melanopsin-safe warm amber (no blue
+    content) so it doesn't fight melatonin before sleep."""
+
+    REST_H, REST_S = 0.045, 0.94   # deep ember amber at rest
+    FULL_H, FULL_S = 0.085, 0.55   # soft warm gold at full breath
+
+
 STREAM_EFFECTS: dict[str, type[Effect]] = {
     "swirl": Swirl,
     "breathing": Breathing,
+    "breathing_warm": BreathingWarm,
     "candle": Candle,
     "fireplace": Fireplace,
     "ocean": Ocean,
