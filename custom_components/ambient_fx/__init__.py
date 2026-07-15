@@ -54,8 +54,25 @@ SERVICE_START_STREAM_SCHEMA = vol.Schema({
 })
 
 
+def _current_bridge_host(hass: HomeAssistant, fallback: str) -> str:
+    """Follow the core Hue integration's bridge host so an IP change
+    (new router, new DHCP lease) never strands us on a stale address —
+    core hue tracks the bridge via zeroconf."""
+    for hue_entry in hass.config_entries.async_entries("hue"):
+        host = hue_entry.data.get("host")
+        if host:
+            return host
+    return fallback
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    bridge = HueFxBridge(hass, entry.data["host"], entry.data["api_key"])
+    host = _current_bridge_host(hass, entry.data["host"])
+    if host != entry.data["host"]:
+        _LOGGER.info("Hue bridge moved %s -> %s; following",
+                     entry.data["host"], host)
+        hass.config_entries.async_update_entry(
+            entry, data={**entry.data, "host": host})
+    bridge = HueFxBridge(hass, host, entry.data["api_key"])
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = bridge
 
     async def _resolve_group(call: ServiceCall):
